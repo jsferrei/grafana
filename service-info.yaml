@@ -1,0 +1,14 @@
+id: grafana-builder
+description: Grafana image build with Heroic backend
+system: monitoring
+owner: layer8
+visibility: public
+
+dependencies: []
+
+facts:
+  lifecycle: experimental
+  slack_channel: monitoring-users
+  tags:
+    - monitoring
+    - heroic

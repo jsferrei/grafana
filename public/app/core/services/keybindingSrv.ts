@@ -13,6 +13,7 @@ export class KeybindingSrv {
   helpModal: boolean;
   modalOpen = false;
   timepickerOpen = false;
+  legendsOn = null;
 
   /** @ngInject */
   constructor(
@@ -249,9 +250,32 @@ export class KeybindingSrv {
         if (panelInfo.panel.legend) {
           const panelRef = dashboard.getPanelById(dashboard.meta.focusPanelId);
           panelRef.legend.show = !panelRef.legend.show;
-          panelRef.refresh();
+          panelRef.render();
         }
       }
+    });
+
+    // toggle all panel legends
+    this.bind('d shift+l', () => {
+      const panels = dashboard.panels.filter(panel => panel.legend !== undefined && panel.legend !== null);
+
+      if (this.legendsOn === null) {
+        let onCount = 0;
+        let offCount = 0;
+        panels.forEach(panel => {
+          if (panel.legend.show) {
+            onCount++;
+          } else {
+            offCount++;
+          }
+        });
+        this.legendsOn = onCount >= offCount;
+      }
+      this.legendsOn = !this.legendsOn;
+      panels.forEach(panel => {
+        panel.legend.show = this.legendsOn;
+        panel.render();
+      });
     });
 
     // collapse all rows

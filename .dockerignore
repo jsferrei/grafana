@@ -6,9 +6,9 @@
 .vscode
 bin
 data*
-dist
 docker
 Dockerfile
+SpotifyDockerfile
 docs
 dump.rdb
 node_modules

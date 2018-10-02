@@ -20,6 +20,7 @@ type DefaultRuleReader struct {
 	serverPosition int
 	clusterSize    int
 	log            log.Logger
+	ruleCache      []*Rule
 }
 
 func NewRuleReader() *DefaultRuleReader {
@@ -43,6 +44,10 @@ func (arr *DefaultRuleReader) Fetch() []*Rule {
 	cmd := &m.GetAllAlertsQuery{}
 
 	if err := bus.Dispatch(cmd); err != nil {
+		if arr.ruleCache != nil && len(arr.ruleCache) > 0 {
+			arr.log.Warn("Error connecting to database. Using cached alert rules.", "error", err)
+			return arr.ruleCache
+		}
 		arr.log.Error("Could not load alerts", "error", err)
 		return []*Rule{}
 	}
@@ -54,6 +59,10 @@ func (arr *DefaultRuleReader) Fetch() []*Rule {
 		} else {
 			res = append(res, model)
 		}
+	}
+
+	if len(res) > 0 {
+		arr.ruleCache = res
 	}
 
 	metrics.M_Alerting_Active_Alerts.Set(float64(len(res)))

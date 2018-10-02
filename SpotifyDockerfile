@@ -1,0 +1,9 @@
+FROM grafana/grafana:5.4.2
+LABEL maintainer "layer8@spotify.com"
+
+COPY dist/grafana-latest.linux-x64.tar.gz /tmp
+
+USER root
+RUN tar xfvz /tmp/grafana-latest.linux-x64.tar.gz --strip-components=1 -C "$GF_PATHS_HOME" && \
+    curl -sL https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64 > /usr/local/bin/jq && chmod +x /usr/local/bin/jq
+USER grafana

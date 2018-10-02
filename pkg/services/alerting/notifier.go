@@ -28,14 +28,17 @@ type NotificationService interface {
 
 func NewNotificationService(renderService rendering.Service) NotificationService {
 	return &notificationService{
-		log:           log.New("alerting.notifier"),
-		renderService: renderService,
+		log:                       log.New("alerting.notifier"),
+		renderService:             renderService,
+		notificationStateCacheMap: map[string]notifierState{},
 	}
 }
 
 type notificationService struct {
-	log           log.Logger
-	renderService rendering.Service
+	log                         log.Logger
+	renderService               rendering.Service
+	allAlertNotificationsCached *m.GetAllAlertNotificationsQuery
+	notificationStateCacheMap   map[string]notifierState
 }
 
 func (n *notificationService) SendIfNeeded(context *EvalContext) error {
@@ -53,7 +56,6 @@ func (n *notificationService) SendIfNeeded(context *EvalContext) error {
 			n.log.Error("Failed to upload alert panel image.", "error", err)
 		}
 	}
-
 	return n.sendNotifications(context, notifierStates)
 }
 
@@ -62,7 +64,6 @@ func (n *notificationService) sendAndMarkAsComplete(evalContext *EvalContext, no
 
 	n.log.Debug("Sending notification", "type", notifier.GetType(), "id", notifier.GetNotifierId(), "isDefault", notifier.GetIsDefault())
 	metrics.M_Alerting_Notification_Sent.WithLabelValues(notifier.GetType()).Inc()
-
 	err := notifier.Notify(evalContext)
 
 	if err != nil {
@@ -95,7 +96,7 @@ func (n *notificationService) sendNotification(evalContext *EvalContext, notifie
 		}
 
 		if err != nil {
-			return err
+			n.log.Warn("Error updating notification state", "error", err)
 		}
 
 		// We need to update state version to be able to log
@@ -158,14 +159,36 @@ func (n *notificationService) uploadImage(context *EvalContext) (err error) {
 }
 
 func (n *notificationService) getNeededNotifiers(orgId int64, notificationIds []int64, evalContext *EvalContext) (notifierStateSlice, error) {
-	query := &m.GetAlertNotificationsToSendQuery{OrgId: orgId, Ids: notificationIds}
 
-	if err := bus.Dispatch(query); err != nil {
-		return nil, err
+	idsMap := map[int64]bool{}
+	for _, notification := range notificationIds {
+		idsMap[notification] = true
+	}
+
+	query := &m.GetAlertNotificationsToSendQuery{OrgId: orgId, Ids: notificationIds}
+	var queryResult []*m.AlertNotification
+	if err := bus.Dispatch(query); err != nil { //dealt with
+		if n.allAlertNotificationsCached != nil {
+			queryResult = n.allAlertNotificationsCached.Result
+			n.log.Warn("Issues retrieving alert notifications from database, using cached data", "error", err)
+		} else {
+			return nil, err
+		}
+
+	} else {
+		queryResult = query.Result
+		allQuery := &m.GetAllAlertNotificationsQuery{OrgId: orgId}
+		if err := bus.Dispatch(allQuery); err == nil {
+			n.allAlertNotificationsCached = allQuery
+		}
 	}
 
 	var result notifierStateSlice
-	for _, notification := range query.Result {
+	for _, notification := range queryResult {
+		_, ok := idsMap[notification.Id]
+		if !ok {
+			continue
+		}
 		not, err := n.createNotifierFor(notification)
 		if err != nil {
 			n.log.Error("Could not create notifier", "notifier", notification.Id, "error", err)
@@ -177,18 +200,29 @@ func (n *notificationService) getNeededNotifiers(orgId int64, notificationIds []
 			AlertId:    evalContext.Rule.Id,
 			OrgId:      evalContext.Rule.OrgId,
 		}
+		key := fmt.Sprintf("%d:%d:%d", notification.Id, evalContext.Rule.Id, evalContext.Rule.OrgId)
 
-		err = bus.DispatchCtx(evalContext.Ctx, query)
+		err = bus.DispatchCtx(evalContext.Ctx, query) //dealt with
 		if err != nil {
+			cached, ok := n.notificationStateCacheMap[key]
+			if ok {
+				n.log.Warn("Could not get notification state. Using cached data.", "notifier", notification.Id, "error", err)
+				if not.ShouldNotify(evalContext.Ctx, evalContext, &m.AlertNotificationState{}) {
+					result = append(result, &cached)
+				}
+				continue
+			}
 			n.log.Error("Could not get notification state.", "notifier", notification.Id, "error", err)
 			continue
 		}
-
+		ptr := notifierState{
+			notifier: not,
+			state:    query.Result,
+		}
+		n.notificationStateCacheMap[key] = ptr
 		if not.ShouldNotify(evalContext.Ctx, evalContext, query.Result) {
-			result = append(result, &notifierState{
-				notifier: not,
-				state:    query.Result,
-			})
+			result = append(result, &ptr)
+
 		}
 	}
 

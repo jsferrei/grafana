@@ -1,0 +1,32 @@
+version: 2
+
+pipelines:
+  - pipeline: Master
+    ref: master
+    stages:
+      - stage: Build repo
+        tasks:
+          - task: build-all
+            steps:
+              - action: grafana/build-container:1.2.1
+                entrypoint: .spotify/scripts/build-all.sh
+      - stage: Build Docker image
+        tasks:
+          - task: build
+            steps:
+              - action: gcr.io/action-containers/docker-builder:17.05.0-9
+                args:
+                  - --push
+                envs:
+                  GCP_PROJECT_ID: xpn-monitoring-1
+                  IMAGE_NAME: grafana
+                  DOCKERFILE_PATH: 'SpotifyDockerfile'
+  - pipeline: PR build
+    ref: pr/.*/merge
+    stages:
+      - stage: Build repo
+        tasks:
+          - task: build-all
+            steps:
+              - action: grafana/build-container:1.2.1
+                entrypoint: .spotify/scripts/build-all.sh
