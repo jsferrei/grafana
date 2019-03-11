@@ -3,7 +3,7 @@ import { hot } from 'react-hot-loader';
 import { connect } from 'react-redux';
 import Page from 'app/core/components/Page/Page';
 import AlertRuleItem from './AlertRuleItem';
-import { List, AutoSizer } from 'react-virtualized';
+import { List, AutoSizer, WindowScroller } from 'react-virtualized';
 
 import appEvents from 'app/core/app_events';
 import { updateLocation } from 'app/core/actions';
@@ -35,6 +35,11 @@ export class AlertRuleList extends PureComponent<Props, any> {
     { text: 'Paused', value: 'paused' },
     { text: 'Pending', value: 'pending' },
   ];
+
+  constructor(props, context) {
+    this.getRowHeight = this.getRowHeight.bind(this);
+    this.getDatum = this.getDatum.bind(this);
+  }
 
   componentDidMount() {
     this.fetchRules();
@@ -88,7 +93,7 @@ export class AlertRuleList extends PureComponent<Props, any> {
     );
   };
 
-  renderRule = ({ index, key, style }) => {
+  renderRule = ({ index, isScrolling, isVisible, key, style }) => {
     const alertRules = this.props.alertRules;
     const alertRule = alertRules[index];
     return (
@@ -103,7 +108,26 @@ export class AlertRuleList extends PureComponent<Props, any> {
     );
   };
 
+  getDatum(index) {
+    return this.props.alertRules[index];
+  }
+
+  getRowHeight({index}) {
+    const rule = this.props.alertRules[index];
+    if (rule.info !== undefined && rule.name !== undefined && rule.name !== "") {
+      return 63;
+    } else {
+      return 45;
+    }
+  }
+
   render() {
+    const customScrollElementWrapper = window.document.getElementsByClassName('custom-scrollbar');
+    let scroll = window;
+    if (customScrollElementWrapper.length > 0) {
+      //if the custom scrollbar has rendered
+      scroll = customScrollElementWrapper[0].getElementsByClassName('view')[0];
+    }
     const { navModel, alertRules, search, isLoading } = this.props;
     return (
       <Page navModel={navModel}>
@@ -132,21 +156,27 @@ export class AlertRuleList extends PureComponent<Props, any> {
               <i className="fa fa-info-circle" /> How to add an alert
             </a>
           </div>
-          <AutoSizer>
-            {({ width, height }) => {
-              return (
-                <List
-                  class="alert-rule-list"
-                  width={width}
-                  height={height}
-                  rowHeight={63}
-                  rowRenderer={this.renderRule}
-                  rowCount={alertRules.length}
-                  overscanRowcount={50}
-                />
-              );
-            }}
-          </AutoSizer>
+          <WindowScroller scrollElement={scroll}>
+            {({ height, isScrolling, onChildScroll, scrollTop }) => (
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    autoHeight
+                    height={height}
+                    isScrolling={isScrolling}
+                    onScroll={onChildScroll}
+                    overscanRowCount={25}
+                    rowCount={alertRules.length}
+                    rowHeight={this.getRowHeight}
+                    rowRenderer={this.renderRule}
+                    scrollToIndex={-1}
+                    scrollTop={scrollTop}
+                    width={924}
+                  />
+                )}
+              </AutoSizer>
+            )}
+          </WindowScroller>
         </Page.Contents>
       </Page>
     );
